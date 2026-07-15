@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>공수 실적 대시보드</title>
+<script>
+  // Chart.js를 순서대로 시도해서 로드 (특정 CDN이 막혀있거나 실패할 경우 대비)
+  function loadScript(src){
+    return new Promise((resolve, reject)=>{
+      const s = document.createElement('script');
+      s.src = src;
+      s.onload = resolve;
+      s.onerror = reject;
+      document.head.appendChild(s);
+    });
+  }
+  window.__chartReady = (async ()=>{
+    const cdns = [
+      "https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js",
+      "https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js",
+      "https://unpkg.com/chart.js@4.4.4/dist/chart.umd.min.js"
+    ];
+    for(const url of cdns){
+      try{ await loadScript(url); if(window.Chart) return true; }catch(e){ /* 다음 CDN 시도 */ }
+    }
+    return false;
+  })();
+</script>
+<style>
+  :root{
+    --bg: #f5f5f6;
+    --panel: #ffffff;
+    --panel-2: #f7f2f3;
+    --line: #e6e1e2;
+    --ink: #2b2b2b;
+    --ink-dim: #767676;
+    --accent: #a50034;     /* LG Red - 교육운영 */
+    --accent-2: #5a5a5a;   /* 차콜 그레이 - 행정 */
+    --good: #1f8a4c;
+    --warn: #d98c00;
+    --bad: #c8102e;
+    --radius: 12px;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--ink);
+    font-family: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap{ max-width:1680px; margin:0 auto; padding:28px 32px 60px; }
+
+  header.top{
+    display:flex; justify-content:space-between; align-items:flex-end;
+    margin-bottom:22px; flex-wrap:wrap; gap:14px;
+  }
+  header.top h1{
+    font-size:22px; margin:0 0 4px; letter-spacing:-0.2px; font-weight:700;
+  }
+  header.top .sub{ color:var(--ink-dim); font-size:13px; }
+  .meta{ font-size:12px; color:var(--ink-dim); text-align:right; }
+  .meta button{
+    background:var(--panel-2); color:var(--ink); border:1px solid var(--line);
+    border-radius:8px; padding:6px 12px; font-size:12px; cursor:pointer; margin-left:8px;
+  }
+  .meta button:hover{ border-color:var(--accent); }
+
+  .filters{
+    display:flex; gap:10px; flex-wrap:wrap; margin-bottom:20px;
+    background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
+    padding:14px;
+  }
+  .filters select{
+    background:var(--panel-2); color:var(--ink); border:1px solid var(--line);
+    border-radius:8px; padding:8px 10px; font-size:13px; min-width:120px;
+  }
+  .filters label{ font-size:11px; color:var(--ink-dim); display:block; margin-bottom:4px; }
+  .filter-group{ display:flex; flex-direction:column; }
+
+  .kpis{
+    display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:20px;
+  }
+  .kpi{
+    background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
+    padding:18px 18px 16px; position:relative; overflow:hidden;
+  }
+  .kpi .label{ font-size:12px; color:var(--ink-dim); margin-bottom:8px; }
+  .kpi .value{ font-size:28px; font-weight:700; letter-spacing:-0.5px; }
+  .kpi .value span.unit{ font-size:13px; color:var(--ink-dim); margin-left:4px; font-weight:400;}
+  .kpi .delta{ font-size:12px; margin-top:6px; }
+  .kpi .delta.up{ color:var(--good); }
+  .kpi .delta.down{ color:var(--bad); }
+  .kpi .bar{ position:absolute; right:0; top:0; bottom:0; width:4px; }
+  .kpi.edu .bar{ background:var(--accent); }
+  .kpi.admin .bar{ background:var(--accent-2); }
+
+  .grid2{ display:grid; grid-template-columns: 1.4fr 1fr; gap:14px; margin-bottom:14px; }
+  @media (max-width:900px){ .grid2{ grid-template-columns:1fr; } .kpis{grid-template-columns:repeat(2,1fr);} }
+
+  .panel{
+    background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:18px;
+  }
+  .panel h2{ font-size:14px; margin:0 0 14px; font-weight:600; color:var(--ink); }
+  .panel h2 .legend{ font-size:11px; color:var(--ink-dim); font-weight:400; margin-left:8px; }
+  .panel-header-row{ display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; flex-wrap:wrap; gap:10px; }
+  .panel-header-row h2{ margin-bottom:0; }
+  .download-btn{
+    background:var(--accent); color:#fff; border:none;
+    border-radius:8px; padding:8px 16px; font-size:12.5px; font-weight:600; cursor:pointer;
+    white-space:nowrap;
+  }
+  .download-btn:hover{ background:#7d0027; }
+  .chart-box{ position:relative; height:280px; }
+  .chart-box.tall{ height:340px; }
+
+  table{ width:100%; border-collapse:collapse; font-size:13px; }
+  thead th{
+    text-align:left; color:var(--ink-dim); font-weight:500; font-size:11px;
+    border-bottom:1px solid var(--line); padding:8px 10px; cursor:pointer; white-space:nowrap;
+  }
+  thead th:hover{ color:var(--ink); }
+  tbody td{ padding:8px 10px; border-bottom:1px solid #e6e1e2; }
+  tbody tr:hover{ background:rgba(165,0,52,0.04); }
+  .tag{ font-size:11px; padding:2px 8px; border-radius:20px; }
+  .tag.edu{ background:rgba(165,0,52,0.10); color:var(--accent); }
+  .tag.admin{ background:rgba(90,90,90,0.12); color:var(--accent-2); }
+
+  .panel{ box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+  .kpi{ box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+
+  .table-wrap{ max-height:380px; overflow:auto; }
+  .table-tabs{ display:flex; align-items:center; gap:6px; margin-bottom:12px; flex-wrap:wrap; }
+  .detail-month-filter{ display:flex; align-items:center; gap:6px; margin-left:auto; }
+  .detail-month-filter label{ font-size:11px; color:var(--ink-dim); }
+  .detail-month-filter select{
+    background:var(--panel-2); color:var(--ink); border:1px solid var(--line);
+    border-radius:8px; padding:6px 10px; font-size:12.5px; min-width:110px;
+  }
+  .tab-btn{
+    background:var(--panel-2); color:var(--ink-dim); border:1px solid var(--line);
+    border-radius:8px; padding:6px 14px; font-size:12px; cursor:pointer;
+  }
+  .tab-btn:hover{ color:var(--ink); }
+  .tab-btn.active{ background:var(--accent); color:#fff; border-color:var(--accent); }
+  .empty{ color:var(--ink-dim); font-size:13px; padding:30px; text-align:center; }
+  .loading{ color:var(--ink-dim); font-size:13px; padding:30px; text-align:center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div>
+      <h1>교육운영 · 행정 공수 실적 대시보드</h1>
+      <div class="sub">월별 공수 추이 및 통합 공수 현황</div>
+    </div>
+    <div class="meta" id="metaInfo">
+      데이터 미연동 (샘플 데이터 표시 중)
+      <button id="refreshBtn" type="button">새로고침</button>
+    </div>
+  </header>
+
+  <div class="filters">
+    <div class="filter-group">
+      <label>본부</label>
+      <select id="f-hq"><option value="">전체</option></select>
+    </div>
+    <div class="filter-group">
+      <label>조직명</label>
+      <select id="f-org"><option value="">전체</option></select>
+    </div>
+    <div class="filter-group">
+      <label>담당자</label>
+      <select id="f-owner"><option value="">전체</option></select>
+    </div>
+    <div class="filter-group">
+      <label>월</label>
+      <select id="f-month"><option value="">전체</option></select>
+    </div>
+    <div class="filter-group">
+      <label>구분</label>
+      <select id="f-type">
+        <option value="">전체</option>
+        <option value="교육운영">교육운영</option>
+        <option value="행정">행정</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="kpis">
+    <div class="kpi"><div class="bar" style="background:#a50034"></div>
+      <div class="label">통합 공수시간 (누적)</div>
+      <div class="value" id="kpi-total">-<span class="unit">시간</span></div>
+    </div>
+    <div class="kpi edu"><div class="bar"></div>
+      <div class="label">교육운영 공수</div>
+      <div class="value" id="kpi-edu">-<span class="unit">시간</span></div>
+    </div>
+    <div class="kpi admin"><div class="bar"></div>
+      <div class="label">행정 공수</div>
+      <div class="value" id="kpi-admin">-<span class="unit">시간</span></div>
+    </div>
+    <div class="kpi"><div class="bar" style="background:#1f8a4c"></div>
+      <div class="label">이번 달 공수</div>
+      <div class="value" id="kpi-month">-<span class="unit">시간</span></div>
+      <div class="delta" id="kpi-month-delta"></div>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div class="panel">
+      <h2>월별 공수 추이 <span class="legend">● 교육운영 ● 행정 ● 통합</span></h2>
+      <div class="chart-box tall"><canvas id="trendChart"></canvas></div>
+    </div>
+    <div class="panel">
+      <h2>본부별 공수 비중</h2>
+      <div class="chart-box tall"><canvas id="hqChart"></canvas></div>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div class="panel">
+      <h2>담당자별 공수 TOP 10</h2>
+      <div class="chart-box"><canvas id="ownerChart"></canvas></div>
+    </div>
+    <div class="panel">
+      <h2>업무 유형별 공수 비중</h2>
+      <div class="chart-box"><canvas id="typeChart"></canvas></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header-row">
+      <h2>상세 데이터 <span class="legend" id="rowCount"></span></h2>
+      <button id="downloadRawBtn" type="button" class="download-btn" onclick="downloadRawCSV()">전체 Raw 데이터 다운로드</button>
+    </div>
+    <div class="table-tabs" id="tableTabs">
+      <button type="button" class="tab-btn active" data-tab="">전체</button>
+      <button type="button" class="tab-btn" data-tab="교육운영">교육운영</button>
+      <button type="button" class="tab-btn" data-tab="행정">행정</button>
+      <div class="detail-month-filter">
+        <label for="detailMonthSelect">월</label>
+        <select id="detailMonthSelect"><option value="">전체</option></select>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table id="dataTable">
+        <thead>
+          <tr>
+            <th data-key="유형구분">구분</th>
+            <th data-key="본부">본부</th>
+            <th data-key="조직명">조직명</th>
+            <th data-key="월">월</th>
+            <th data-key="담당자">담당자</th>
+            <th data-key="과정명">과정명 / 업무항목</th>
+            <th data-key="유형">유형</th>
+            <th data-key="공수시간">공수시간(h)</th>
+          </tr>
+        </thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<script>
+/* ===================== 설정 ===================== */
+// Apps Script 웹앱 배포 URL (JSON API 버전으로 재배포된 주소)
+const API_URL = "https://script.google.com/macros/s/AKfycbzGsQZiVOhTcnpcazNZQM5W12ffYeehw2-LeiWUEuXOlsr5ls1CqPOfsswfpl2AZ2cW/exec";
+
+/* ===================== 샘플 데이터 (API_URL 실패 시 대체 표시) ===================== */
+function sampleData(){
+  const hqs = ["인재개발본부","생산기술본부"];
+  const orgs = {"인재개발본부":["EXG팀","교육서비스센터"], "생산기술본부":["생산기술EXG팀"]};
+  const owners = ["이헌정","김지수","박서연","최도윤"];
+  const months = ["2026-01","2026-02","2026-03","2026-04","2026-05","2026-06"];
+  const eduTypes = ["오프라인","하이브리드","실시간 온라인","이러닝","어학","기타"];
+  const adminTypes = ["행정","어학","인화원"];
+  const edu = [], admin = [];
+  let id=0;
+  months.forEach(m=>{
+    hqs.forEach(hq=>{
+      orgs[hq].forEach(org=>{
+        owners.forEach(owner=>{
+          if(Math.random() < 0.7){
+            edu.push({
+              본부:hq, 조직명:org, 월:m, 담당자:owner,
+              카테고리:"리더십", 과정명:`교육과정 #${++id}`, 차수:"1차수",
+              유형: eduTypes[Math.floor(Math.random()*eduTypes.length)],
+              교육일수: Math.ceil(Math.random()*3),
+              공수시간: Math.round((Math.random()*20+2)*10)/10,
+              구분:"중", 업무항목:"공통-업무 항목", 상세내용:"", 유형구분:"교육운영"
+            });
+          }
+          if(Math.random() < 0.5){
+            admin.push({
+              본부:hq, 조직명:org, 월:m, 담당자:owner,
+              유형: adminTypes[Math.floor(Math.random()*adminTypes.length)],
+              건수: Math.ceil(Math.random()*10),
+              공수시간: Math.round((Math.random()*10+1)*10)/10,
+              업무항목:"행정 처리", 상세내용:"", 유형구분:"행정"
+            });
+          }
+        });
+      });
+    });
+  });
+  return {success:true, generatedAt:new Date().toISOString(), 교육운영:edu, 행정:admin};
+}
+
+/* ===================== 상태 ===================== */
+let RAW = { 교육운영: [], 행정: [] };
+let sortState = { key:null, dir:1 };
+let tableTab = '';
+let charts = {};
+
+/* ===================== 데이터 로드 ===================== */
+async function loadData(){
+  const metaEl = document.getElementById('metaInfo');
+  if(!API_URL){
+    RAW = sampleData();
+    metaEl.innerHTML = '데이터 미연동 (샘플 데이터 표시 중) <button id="refreshBtn" type="button">새로고침</button>';
+    bindRefresh();
+    render();
+    return;
+  }
+  metaEl.innerHTML = '불러오는 중...';
+  try{
+    const res = await fetch(API_URL, { cache: 'no-store' });
+    const json = await res.json();
+    if(json.success === false) throw new Error(json.error || '데이터 오류');
+    RAW = { 교육운영: json.교육운영 || [], 행정: json.행정 || [] };
+    const t = new Date(json.generatedAt || Date.now());
+    metaEl.innerHTML = `업데이트: ${t.toLocaleString('ko-KR')} <button id="refreshBtn" type="button">새로고침</button>`;
+  }catch(err){
+    RAW = sampleData();
+    metaEl.innerHTML = `연동 실패(${err.message}) - 샘플 데이터 표시 중 <button id="refreshBtn" type="button">새로고침</button>`;
+  }
+  bindRefresh();
+  render();
+}
+function bindRefresh(){
+  document.getElementById('refreshBtn').addEventListener('click', loadData);
+}
+
+/* ===================== 필터 옵션 채우기 ===================== */
+function uniq(arr){ return [...new Set(arr)].filter(Boolean).sort(); }
+
+function populateFilters(all){
+  const hqSel = document.getElementById('f-hq');
+  const orgSel = document.getElementById('f-org');
+  const ownerSel = document.getElementById('f-owner');
+
+  const curHq = hqSel.value;
+  const curOrg = orgSel.value;
+  const curOwner = ownerSel.value;
+
+  const hqs = uniq(all.map(r=>r.본부));
+  hqSel.innerHTML = '<option value="">전체</option>' + hqs.map(h=>`<option value="${h}">${h}</option>`).join('');
+  hqSel.value = curHq;
+
+  const monthSel = document.getElementById('f-month');
+  const curMonthVal = monthSel.value;
+  const months = uniq(all.map(r=>r.월)).sort();
+  monthSel.innerHTML = '<option value="">전체</option>' + months.map(m=>`<option value="${m}">${m}</option>`).join('');
+  monthSel.value = curMonthVal;
+
+  function refreshOrgOwner(){
+    const hq = hqSel.value;
+    const scoped = hq ? all.filter(r=>r.본부===hq) : all;
+    const orgs = uniq(scoped.map(r=>r.조직명));
+    const owners = uniq(scoped.map(r=>r.담당자));
+    orgSel.innerHTML = '<option value="">전체</option>' + orgs.map(o=>`<option value="${o}">${o}</option>`).join('');
+    ownerSel.innerHTML = '<option value="">전체</option>' + owners.map(o=>`<option value="${o}">${o}</option>`).join('');
+    orgSel.value = orgs.includes(curOrg) ? curOrg : '';
+    ownerSel.value = owners.includes(curOwner) ? curOwner : '';
+  }
+  refreshOrgOwner();
+  hqSel.onchange = ()=>{ refreshOrgOwner(); render(); };
+}
+
+/* ===================== 데이터 결합 / 필터 ===================== */
+function combined(){
+  return [...RAW.교육운영, ...RAW.행정];
+}
+function filtered(){
+  const hq = document.getElementById('f-hq').value;
+  const org = document.getElementById('f-org').value;
+  const owner = document.getElementById('f-owner').value;
+  const type = document.getElementById('f-type').value;
+  const month = document.getElementById('f-month').value;
+  return combined().filter(r=>
+    (!hq || r.본부===hq) &&
+    (!org || r.조직명===org) &&
+    (!owner || r.담당자===owner) &&
+    (!type || r.유형구분===type) &&
+    (!month || r.월===month)
+  );
+}
+
+/* ===================== 렌더링 ===================== */
+let lastFilteredData = [];
+
+function render(){
+  const all = combined();
+  populateFilters(all);
+  const data = filtered();
+  lastFilteredData = data;
+
+  renderKpis(data);
+  renderTrendChart(data);
+  renderHqChart(data);
+  renderOwnerChart(data);
+  renderTypeChart(data);
+  renderTable(data);
+}
+
+function sum(arr, key){ return arr.reduce((s,r)=>s+(Number(r[key])||0),0); }
+
+function renderKpis(data){
+  const eduSum = sum(data.filter(r=>r.유형구분==='교육운영'),'공수시간');
+  const adminSum = sum(data.filter(r=>r.유형구분==='행정'),'공수시간');
+  const total = eduSum + adminSum;
+
+  const months = uniq(data.map(r=>r.월)).sort();
+  const curM = months[months.length-1];
+  const prevM = months[months.length-2];
+  const curSum = sum(data.filter(r=>r.월===curM),'공수시간');
+  const prevSum = sum(data.filter(r=>r.월===prevM),'공수시간');
+
+  document.getElementById('kpi-total').innerHTML = `${total.toFixed(1)}<span class="unit">시간</span>`;
+  document.getElementById('kpi-edu').innerHTML = `${eduSum.toFixed(1)}<span class="unit">시간</span>`;
+  document.getElementById('kpi-admin').innerHTML = `${adminSum.toFixed(1)}<span class="unit">시간</span>`;
+  document.getElementById('kpi-month').innerHTML = `${curSum.toFixed(1)}<span class="unit">시간 (${curM||'-'})</span>`;
+
+  const deltaEl = document.getElementById('kpi-month-delta');
+  if(prevM){
+    const diff = curSum - prevSum;
+    const pct = prevSum ? Math.abs(diff/prevSum*100).toFixed(1) : '-';
+    deltaEl.textContent = `전월 대비 ${diff>=0?'▲':'▼'} ${pct}%`;
+    deltaEl.className = 'delta ' + (diff>=0?'up':'down');
+  } else { deltaEl.textContent = ''; }
+}
+
+function destroy(key){ if(charts[key]){ charts[key].destroy(); } }
+function chartAvailable(){ return typeof Chart !== 'undefined'; }
+
+const COLORS = { edu:'#a50034', admin:'#5a5a5a', total:'#1f8a4c' };
+
+function renderTrendChart(data){
+  if(!chartAvailable()) return;
+  destroy('trend');
+  const months = uniq(data.map(r=>r.월)).sort();
+  const eduByM = months.map(m=>sum(data.filter(r=>r.월===m && r.유형구분==='교육운영'),'공수시간'));
+  const adminByM = months.map(m=>sum(data.filter(r=>r.월===m && r.유형구분==='행정'),'공수시간'));
+  const totalByM = months.map((m,i)=>eduByM[i]+adminByM[i]);
+
+  const ctx = document.getElementById('trendChart');
+  charts.trend = new Chart(ctx, {
+    type:'bar',
+    data:{
+      labels: months,
+      datasets:[
+        { type:'bar', label:'교육운영', data:eduByM, backgroundColor:COLORS.edu, stack:'s' },
+        { type:'bar', label:'행정', data:adminByM, backgroundColor:COLORS.admin, stack:'s' },
+        { type:'line', label:'통합', data:totalByM, borderColor:COLORS.total, backgroundColor:'transparent', tension:0.3, yAxisID:'y' }
+      ]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{ display:false } },
+      scales:{
+        x:{ ticks:{ color:'#767676' }, grid:{ color:'#e6e1e2' } },
+        y:{ ticks:{ color:'#767676' }, grid:{ color:'#e6e1e2' }, stacked:true }
+      }
+    }
+  });
+}
+
+function renderHqChart(data){
+  if(!chartAvailable()) return;
+  destroy('hq');
+  const hqs = uniq(data.map(r=>r.본부));
+  const vals = hqs.map(h=>sum(data.filter(r=>r.본부===h),'공수시간'));
+  const ctx = document.getElementById('hqChart');
+  charts.hq = new Chart(ctx, {
+    type:'doughnut',
+    data:{ labels:hqs, datasets:[{ data:vals, backgroundColor:['#a50034','#5a5a5a','#d4969f','#1f8a4c','#c9a200'] }] },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{ position:'bottom', labels:{ color:'#767676', boxWidth:10 } } }
+    }
+  });
+}
+
+function renderOwnerChart(data){
+  if(!chartAvailable()) return;
+  destroy('owner');
+  const owners = uniq(data.map(r=>r.담당자));
+  const totals = owners.map(o=>({o, v: sum(data.filter(r=>r.담당자===o),'공수시간')}))
+    .sort((a,b)=>b.v-a.v).slice(0,10);
+  const ctx = document.getElementById('ownerChart');
+  charts.owner = new Chart(ctx, {
+    type:'bar',
+    data:{ labels: totals.map(t=>t.o), datasets:[{ label:'공수시간', data: totals.map(t=>t.v), backgroundColor:'#a50034' }] },
+    options:{
+      indexAxis:'y', responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{ display:false } },
+      scales:{ x:{ ticks:{ color:'#767676' }, grid:{ color:'#e6e1e2' } }, y:{ ticks:{ color:'#2b2b2b' }, grid:{ display:false } } }
+    }
+  });
+}
+
+function renderTypeChart(data){
+  if(!chartAvailable()) return;
+  destroy('type');
+  const types = uniq(data.map(r=>r.유형));
+  const vals = types.map(t=>sum(data.filter(r=>r.유형===t),'공수시간'));
+  const ctx = document.getElementById('typeChart');
+  charts.type = new Chart(ctx, {
+    type:'pie',
+    data:{ labels: types, datasets:[{ data: vals, backgroundColor:['#a50034','#5a5a5a','#d4969f','#1f8a4c','#c9a200','#8c8c8c','#e0aab5'] }] },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{ position:'bottom', labels:{ color:'#767676', boxWidth:10 } } }
+    }
+  });
+}
+
+function populateDetailMonthFilter(data){
+  const sel = document.getElementById('detailMonthSelect');
+  const cur = sel.value;
+  const months = uniq(data.map(r=>r.월)).sort();
+  sel.innerHTML = '<option value="">전체</option>' + months.map(m=>`<option value="${m}">${m}</option>`).join('');
+  sel.value = months.includes(cur) ? cur : '';
+}
+
+function renderTable(data){
+  populateDetailMonthFilter(data);
+  const detailMonth = document.getElementById('detailMonthSelect').value;
+  let tabFiltered = tableTab ? data.filter(r=>r.유형구분===tableTab) : data;
+  if(detailMonth) tabFiltered = tabFiltered.filter(r=>r.월===detailMonth);
+  document.getElementById('rowCount').textContent = `(${tabFiltered.length}건)`;
+  const rows = sortState.key ? [...tabFiltered].sort((a,b)=>{
+    const av=a[sortState.key], bv=b[sortState.key];
+    if(typeof av === 'number') return (av-bv)*sortState.dir;
+    return String(av||'').localeCompare(String(bv||''))*sortState.dir;
+  }) : tabFiltered;
+
+  const body = document.getElementById('tableBody');
+  if(rows.length===0){
+    body.innerHTML = `<tr><td colspan="8" class="empty">조건에 맞는 데이터가 없습니다.</td></tr>`;
+    return;
+  }
+  body.innerHTML = rows.map(r=>`
+    <tr>
+      <td><span class="tag ${r.유형구분==='교육운영'?'edu':'admin'}">${r.유형구분}</span></td>
+      <td>${r.본부||''}</td>
+      <td>${r.조직명||''}</td>
+      <td>${r.월||''}</td>
+      <td>${r.담당자||''}</td>
+      <td>${r.과정명 || r.업무항목 || ''}</td>
+      <td>${r.유형||''}</td>
+      <td>${(Number(r.공수시간)||0).toFixed(1)}</td>
+    </tr>
+  `).join('');
+}
+
+/* ===================== 전체 Raw 데이터 다운로드 (CSV) ===================== */
+function csvEscape(v){
+  const s = (v === null || v === undefined) ? '' : String(v);
+  if(/[",\n]/.test(s)) return '"' + s.replace(/"/g,'""') + '"';
+  return s;
+}
+
+function downloadRawCSV(){
+  const columns = ['유형구분','본부','조직명','월','담당자','카테고리','과정명','차수','유형','교육일수','건수','공수시간','구분','업무항목','상세내용'];
+  const all = combined(); // 현재 필터와 무관하게 전체 원본 데이터
+  if(all.length === 0){
+    alert('다운로드할 데이터가 없습니다.');
+    return;
+  }
+  const header = columns.join(',');
+  const rows = all.map(r => columns.map(c => csvEscape(r[c])).join(','));
+  const csvContent = '\uFEFF' + [header, ...rows].join('\n'); // UTF-8 BOM (엑셀 한글 깨짐 방지)
+
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const stamp = new Date().toISOString().slice(0,10);
+  a.href = url;
+  a.download = `공수실적_원본데이터_${stamp}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+/* ===================== 이벤트 바인딩 ===================== */
+['f-org','f-owner','f-type','f-month'].forEach(id=>{
+  document.getElementById(id).addEventListener('change', render);
+});
+document.querySelectorAll('.tab-btn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    tableTab = btn.dataset.tab;
+    document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    renderTable(lastFilteredData);
+  });
+});
+document.getElementById('detailMonthSelect').addEventListener('change', ()=>{
+  renderTable(lastFilteredData);
+});
+document.querySelectorAll('#dataTable thead th').forEach(th=>{
+  th.addEventListener('click', ()=>{
+    const key = th.dataset.key;
+    sortState.dir = (sortState.key===key) ? sortState.dir*-1 : 1;
+    sortState.key = key;
+    render();
+  });
+});
+
+/* ===================== 초기 로드 ===================== */
+(async ()=>{
+  const ok = await window.__chartReady;
+  if(!ok){
+    document.getElementById('metaInfo').innerHTML =
+      'Chart.js 로드 실패 (네트워크 차단 추정) - 차트 없이 표 데이터만 표시됩니다.';
+  }
+  loadData();
+})();
+</script>
+</body>
+</html>
