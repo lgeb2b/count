@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -146,26 +147,6 @@
   .tab-btn.active{ background:var(--accent); color:#fff; border-color:var(--accent); }
   .empty{ color:var(--ink-dim); font-size:13px; padding:30px; text-align:center; }
   .loading{ color:var(--ink-dim); font-size:13px; padding:30px; text-align:center; }
-
-  /* 본부/조직 별 공수시간 그룹핑 표 */
-  .hq-org-table{ border:1px solid var(--line); }
-  .hq-org-table thead th{
-    text-align:center; background:#eef2fb; color:#2b2b2b; font-weight:700;
-    border-bottom:1px solid var(--line); border-right:1px solid var(--line);
-  }
-  .hq-org-table thead th:last-child{ border-right:none; }
-  .hq-org-table thead th.num{ text-align:right; padding-right:16px; }
-  .hq-org-table tbody td{ border-right:1px solid #ecebec; }
-  .hq-org-table tbody td:last-child{ border-right:none; }
-  .hq-org-table tbody td.num{ text-align:right; padding-right:16px; font-variant-numeric:tabular-nums; }
-  .hq-row td{ font-weight:700; background:#f7f8fb; cursor:pointer; user-select:none; }
-  .hq-row .toggle-ico{ display:inline-block; width:14px; text-align:center; color:var(--accent); margin-right:4px; }
-  .org-row td:first-child{ color:var(--ink-dim); }
-  .org-row.hidden{ display:none; }
-  .grand-total-row td{ font-weight:700; background:rgba(165,0,52,0.08); border-top:2px solid var(--accent); }
-  .grand-total-row td:first-child{ text-align:center; }
-  .sub-hr{ font-size:11px; font-weight:400; color:var(--ink-dim); margin-left:6px; }
-  .grand-total-row .sub-hr{ color:var(--ink-dim); font-weight:600; }
 </style>
 </head>
 <body>
@@ -212,19 +193,19 @@
   <div class="kpis">
     <div class="kpi"><div class="bar" style="background:#a50034"></div>
       <div class="label">통합 공수시간 (누적)</div>
-      <div class="value" id="kpi-total">-</div>
+      <div class="value" id="kpi-total">-<span class="unit">시간</span></div>
     </div>
     <div class="kpi edu"><div class="bar"></div>
       <div class="label">교육운영 공수</div>
-      <div class="value" id="kpi-edu">-</div>
+      <div class="value" id="kpi-edu">-<span class="unit">시간</span></div>
     </div>
     <div class="kpi admin"><div class="bar"></div>
       <div class="label">행정 공수</div>
-      <div class="value" id="kpi-admin">-</div>
+      <div class="value" id="kpi-admin">-<span class="unit">시간</span></div>
     </div>
     <div class="kpi"><div class="bar" style="background:#1f8a4c"></div>
       <div class="label">이번 달 공수</div>
-      <div class="value" id="kpi-month">-</div>
+      <div class="value" id="kpi-month">-<span class="unit">시간</span></div>
       <div class="delta" id="kpi-month-delta"></div>
     </div>
   </div>
@@ -276,7 +257,7 @@
             <th data-key="담당자">담당자</th>
             <th data-key="과정명">과정명 / 업무항목</th>
             <th data-key="유형">유형</th>
-            <th data-key="공수시간">공수시간</th>
+            <th data-key="공수시간">공수시간(h)</th>
           </tr>
         </thead>
         <tbody id="tableBody"></tbody>
@@ -306,25 +287,21 @@ function sampleData(){
       orgs[hq].forEach(org=>{
         owners.forEach(owner=>{
           if(Math.random() < 0.7){
-            const eduHr = Math.round((Math.random()*20+2)*10)/10;
             edu.push({
               본부:hq, 조직명:org, 월:m, 담당자:owner,
               카테고리:"리더십", 과정명:`교육과정 #${++id}`, 차수:"1차수",
               유형: eduTypes[Math.floor(Math.random()*eduTypes.length)],
               교육일수: Math.ceil(Math.random()*3),
-              공수시간분: Math.round(eduHr*60),
-              공수시간: eduHr,
+              공수시간: Math.round((Math.random()*20+2)*10)/10,
               구분:"중", 업무항목:"공통-업무 항목", 상세내용:"", 유형구분:"교육운영"
             });
           }
           if(Math.random() < 0.5){
-            const admHr = Math.round((Math.random()*10+1)*10)/10;
             admin.push({
               본부:hq, 조직명:org, 월:m, 담당자:owner,
               유형: adminTypes[Math.floor(Math.random()*adminTypes.length)],
               건수: Math.ceil(Math.random()*10),
-              공수시간분: Math.round(admHr*60),
-              공수시간: admHr,
+              공수시간: Math.round((Math.random()*10+1)*10)/10,
               업무항목:"행정 처리", 상세내용:"", 유형구분:"행정"
             });
           }
@@ -444,41 +421,21 @@ function render(){
 
 function sum(arr, key){ return arr.reduce((s,r)=>s+(Number(r[key])||0),0); }
 
-// 소수 시간(예: 3.5) → "3시간 30분" 형태로 변환
-function formatHM(decimalHours){
-  const totalMinutes = Math.round((Number(decimalHours) || 0) * 60);
-  const h = Math.floor(totalMinutes / 60);
-  const m = totalMinutes % 60;
-  return `${h}시간 ${m}분`;
-}
-
-function formatMinHr(minVal, hrVal){
-  const min = Math.round(Number(minVal) || 0).toLocaleString('ko-KR');
-  const hr = (Math.round((Number(hrVal) || 0) * 10) / 10).toLocaleString('ko-KR');
-  return `${min}분<span class="unit sub-hr">(${hr}시간)</span>`;
-}
-
 function renderKpis(data){
-  const eduRows = data.filter(r=>r.유형구분==='교육운영');
-  const adminRows = data.filter(r=>r.유형구분==='행정');
-  const eduSum = sum(eduRows,'공수시간');
-  const adminSum = sum(adminRows,'공수시간');
-  const eduSumMin = sum(eduRows,'공수시간분');
-  const adminSumMin = sum(adminRows,'공수시간분');
+  const eduSum = sum(data.filter(r=>r.유형구분==='교육운영'),'공수시간');
+  const adminSum = sum(data.filter(r=>r.유형구분==='행정'),'공수시간');
   const total = eduSum + adminSum;
-  const totalMin = eduSumMin + adminSumMin;
 
   const months = uniq(data.map(r=>r.월)).sort();
   const curM = months[months.length-1];
   const prevM = months[months.length-2];
   const curSum = sum(data.filter(r=>r.월===curM),'공수시간');
-  const curSumMin = sum(data.filter(r=>r.월===curM),'공수시간분');
   const prevSum = sum(data.filter(r=>r.월===prevM),'공수시간');
 
-  document.getElementById('kpi-total').innerHTML = formatMinHr(totalMin, total);
-  document.getElementById('kpi-edu').innerHTML = formatMinHr(eduSumMin, eduSum);
-  document.getElementById('kpi-admin').innerHTML = formatMinHr(adminSumMin, adminSum);
-  document.getElementById('kpi-month').innerHTML = `${formatMinHr(curSumMin, curSum)}<span class="unit">(${curM||'-'})</span>`;
+  document.getElementById('kpi-total').innerHTML = `${total.toFixed(1)}<span class="unit">시간</span>`;
+  document.getElementById('kpi-edu').innerHTML = `${eduSum.toFixed(1)}<span class="unit">시간</span>`;
+  document.getElementById('kpi-admin').innerHTML = `${adminSum.toFixed(1)}<span class="unit">시간</span>`;
+  document.getElementById('kpi-month').innerHTML = `${curSum.toFixed(1)}<span class="unit">시간 (${curM||'-'})</span>`;
 
   const deltaEl = document.getElementById('kpi-month-delta');
   if(prevM){
@@ -608,7 +565,7 @@ function renderTable(data){
       <td>${r.담당자||''}</td>
       <td>${r.과정명 || r.업무항목 || ''}</td>
       <td>${r.유형||''}</td>
-      <td>${formatHM(r.공수시간)}</td>
+      <td>${(Number(r.공수시간)||0).toFixed(1)}</td>
     </tr>
   `).join('');
 }
