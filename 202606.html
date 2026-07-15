@@ -252,23 +252,6 @@
   </div>
 
   <div class="panel">
-    <h2>본부/조직 별 공수시간</h2>
-    <div class="table-wrap">
-      <table id="hqOrgTable" class="hq-org-table">
-        <thead>
-          <tr>
-            <th>본부</th>
-            <th>조직명</th>
-            <th class="num">공수시간(분)</th>
-            <th class="num">공수시간(시간)</th>
-          </tr>
-        </thead>
-        <tbody id="hqOrgTableBody"></tbody>
-      </table>
-    </div>
-  </div>
-
-  <div class="panel">
     <div class="panel-header-row">
       <h2>상세 데이터 <span class="legend" id="rowCount"></span></h2>
       <button id="downloadRawBtn" type="button" class="download-btn" onclick="downloadRawCSV()">전체 Raw 데이터 다운로드</button>
@@ -456,7 +439,6 @@ function render(){
   renderHqChart(data);
   renderOwnerChart(data);
   renderTypeChart(data);
-  renderHqOrgTable(data);
   renderTable(data);
 }
 
@@ -589,66 +571,6 @@ function renderTypeChart(data){
       responsive:true, maintainAspectRatio:false,
       plugins:{ legend:{ position:'bottom', labels:{ color:'#767676', boxWidth:10 } } }
     }
-  });
-}
-
-/* ===================== 본부/조직 별 공수시간 (그룹핑 표) ===================== */
-function renderHqOrgTable(data){
-  const groups = new Map(); // 본부 -> Map(조직명 -> {min,hr})
-  let grandMin = 0, grandHr = 0;
-
-  data.forEach(r=>{
-    const hq = r.본부 || '(미지정)';
-    const org = r.조직명 || '(미지정)';
-    if(!groups.has(hq)) groups.set(hq, new Map());
-    const orgMap = groups.get(hq);
-    if(!orgMap.has(org)) orgMap.set(org, { min:0, hr:0 });
-    const cell = orgMap.get(org);
-    cell.min += Number(r.공수시간분) || 0;
-    cell.hr += Number(r.공수시간) || 0;
-    grandMin += Number(r.공수시간분) || 0;
-    grandHr += Number(r.공수시간) || 0;
-  });
-
-  const body = document.getElementById('hqOrgTableBody');
-  if(groups.size === 0){
-    body.innerHTML = `<tr><td colspan="4" class="empty">조건에 맞는 데이터가 없습니다.</td></tr>`;
-    return;
-  }
-
-  let html = '';
-  let gi = 0;
-  groups.forEach((orgMap, hq)=>{
-    const groupId = `hq-group-${gi++}`;
-    html += `<tr class="hq-row" data-target="${groupId}">
-      <td colspan="4"><span class="toggle-ico">▾</span>${hq}</td>
-    </tr>`;
-    orgMap.forEach((cell, org)=>{
-      html += `<tr class="org-row ${groupId}">
-        <td></td>
-        <td>${org}</td>
-        <td class="num">${Math.round(cell.min).toLocaleString('ko-KR')}분</td>
-        <td class="num">${(Math.round(cell.hr*10)/10).toLocaleString('ko-KR')}시간</td>
-      </tr>`;
-    });
-  });
-  html += `<tr class="grand-total-row">
-    <td colspan="2">총합계</td>
-    <td class="num">${Math.round(grandMin).toLocaleString('ko-KR')}분</td>
-    <td class="num">${(Math.round(grandHr*10)/10).toLocaleString('ko-KR')}시간</td>
-  </tr>`;
-
-  body.innerHTML = html;
-
-  body.querySelectorAll('.hq-row').forEach(row=>{
-    row.addEventListener('click', ()=>{
-      const groupId = row.dataset.target;
-      const icon = row.querySelector('.toggle-ico');
-      const rows = body.querySelectorAll('.' + groupId);
-      const collapsing = icon.textContent === '▾';
-      rows.forEach(r => r.classList.toggle('hidden', collapsing));
-      icon.textContent = collapsing ? '▸' : '▾';
-    });
   });
 }
 
